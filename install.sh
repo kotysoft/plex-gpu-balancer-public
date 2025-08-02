@@ -4,36 +4,43 @@
 # Simple interactive installer for Proxmox VE
 # https://github.com/kotysoft/plex-gpu-balancer-public
 
-# If running from pipe, download and run interactively (but only if not already downloaded)
-if [ ! -t 0 ] && [ "$PLEX_INSTALLER_DOWNLOADED" != "1" ]; then
-    echo "Detected piped input - downloading installer for interactive mode..."
-    
-    # Basic checks
-    if ! command -v pct >/dev/null 2>&1; then
-        echo "ERROR: This installer must be run on a Proxmox VE host"
-        exit 1
-    fi
-    
-    if [ "$EUID" -ne 0 ]; then
-        echo "ERROR: This script must be run as root"
-        exit 1
-    fi
-    
-    # Clean up any previous installers
-    rm -f /tmp/plex-gpu-installer-*.sh /tmp/plex-installer.sh 2>/dev/null
-    
-    # Download installer
-    TEMP_INSTALLER="/tmp/plex-installer.sh"
-    echo "Downloading latest installer..."
-    
-    if curl -sSL https://raw.githubusercontent.com/kotysoft/plex-gpu-balancer-public/main/install.sh -o "$TEMP_INSTALLER"; then
-        chmod +x "$TEMP_INSTALLER"
-        echo "Starting interactive installer..."
-        export PLEX_INSTALLER_DOWNLOADED=1
-        exec "$TEMP_INSTALLER"
-    else
-        echo "ERROR: Failed to download installer"
-        exit 1
+# Check if this is the downloaded version
+if [ -f "/tmp/.plex-installer-running" ]; then
+    # This is the downloaded version - clean up flag on exit
+    trap 'rm -f /tmp/.plex-installer-running /tmp/plex-installer.sh 2>/dev/null' EXIT
+else
+    # If running from pipe, download and run interactively
+    if [ ! -t 0 ]; then
+        echo "Detected piped input - downloading installer for interactive mode..."
+        
+        # Basic checks
+        if ! command -v pct >/dev/null 2>&1; then
+            echo "ERROR: This installer must be run on a Proxmox VE host"
+            exit 1
+        fi
+        
+        if [ "$EUID" -ne 0 ]; then
+            echo "ERROR: This script must be run as root"
+            exit 1
+        fi
+        
+        # Clean up any previous installers
+        rm -f /tmp/plex-gpu-installer-*.sh /tmp/plex-installer.sh /tmp/.plex-installer-running 2>/dev/null
+        
+        # Download installer
+        TEMP_INSTALLER="/tmp/plex-installer.sh"
+        echo "Downloading latest installer..."
+        
+        if curl -sSL https://raw.githubusercontent.com/kotysoft/plex-gpu-balancer-public/main/install.sh -o "$TEMP_INSTALLER"; then
+            chmod +x "$TEMP_INSTALLER"
+            echo "Starting interactive installer..."
+            # Create flag file to prevent loop
+            touch /tmp/.plex-installer-running
+            exec "$TEMP_INSTALLER"
+        else
+            echo "ERROR: Failed to download installer"
+            exit 1
+        fi
     fi
 fi
 
