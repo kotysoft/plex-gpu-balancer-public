@@ -4,8 +4,8 @@
 # Simple interactive installer for Proxmox VE
 # https://github.com/kotysoft/plex-gpu-balancer-public
 
-# If running from pipe, download and run interactively
-if [ ! -t 0 ]; then
+# If running from pipe, download and run interactively (but only if not already downloaded)
+if [ ! -t 0 ] && [ "$PLEX_INSTALLER_DOWNLOADED" != "1" ]; then
     echo "Detected piped input - downloading installer for interactive mode..."
     
     # Basic checks
@@ -29,6 +29,7 @@ if [ ! -t 0 ]; then
     if curl -sSL https://raw.githubusercontent.com/kotysoft/plex-gpu-balancer-public/main/install.sh -o "$TEMP_INSTALLER"; then
         chmod +x "$TEMP_INSTALLER"
         echo "Starting interactive installer..."
+        export PLEX_INSTALLER_DOWNLOADED=1
         exec "$TEMP_INSTALLER"
     else
         echo "ERROR: Failed to download installer"
