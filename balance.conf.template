@@ -1,0 +1,50 @@
+# Plex GPU Load Balancer Configuration Template
+# Copy this to balance.conf and customize as needed
+# GPU devices will be auto-discovered when the main service runs
+
+[gpu_devices]
+# Available GPU devices in the system (auto-discovered)
+# Format: gpu{number} = {device_id}
+# Example (actual PCI device identifiers from Plex):
+# gpu1 = 10de:1f08:1043:86f0@0000:01:00.0
+# gpu2 = 8086:4692:1462:7d45@0000:00:02.0
+
+[balancing_method]
+# Balancing method: "preferred-order" or "split-sessions"
+method = preferred-order
+
+[gpu_priority]
+# Global GPU order priority (applies to both balancing methods)
+# Format: priority_{number} = gpu{number}
+# Lower numbers have higher priority
+# Example:
+# priority_1 = gpu1  # First priority GPU
+# priority_2 = gpu2  # Second priority GPU
+# priority_3 = gpu3  # Third priority GPU
+priority_1 = 
+priority_2 = 
+priority_3 = 
+
+[preferred_order_settings]
+# Load average threshold settings for preferred-order method
+load_threshold_percentage = 80
+load_threshold_seconds = 30
+
+[split_sessions_settings]
+# Load average limits for split-sessions method
+load_limit_percentage = 75
+load_limit_seconds = 60
+
+[max_sessions]
+# Maximum session numbers per GPU device
+# Format: gpu{number}_max_sessions = {number}
+# Example:
+# gpu1_max_sessions = 5
+# gpu2_max_sessions = 3
+# gpu3_max_sessions = 8
+
+[system]
+# System configuration
+auto_restart_service = true
+auto_balancing_enabled = true
+config_version = 1.0

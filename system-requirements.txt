@@ -1,0 +1,9 @@
+# System Requirements for Plex GPU Balancer
+# Install with: sudo apt update && sudo apt install -y $(cat system-requirements.txt | grep -v '^#' | grep -v '^$' | tr '\n' ' ')
+
+intel-gpu-tools
+nvidia-utils-535
+
+unzip
+curl
+wget

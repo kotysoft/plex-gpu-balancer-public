@@ -1,0 +1,9 @@
+# Plex GPU Balancer Main Configuration Template
+
+[system]
+# Project installation path - change this to match your installation location
+project_path = /opt/plex-gpu-balancer
+
+[plex]
+server = 192.168.1.100:32400
+token = YOUR_PLEX_TOKEN_HERE

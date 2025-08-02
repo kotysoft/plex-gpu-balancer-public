@@ -1,0 +1,16 @@
+[Unit]
+Description=Plex GPU Balancer Dashboard
+After=network.target plex-gpu-collector.service
+Wants=network-online.target
+Requires=plex-gpu-collector.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=PROJECT_PATH_PLACEHOLDER
+ExecStart=/usr/bin/python3 PROJECT_PATH_PLACEHOLDER/src/dashboard.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

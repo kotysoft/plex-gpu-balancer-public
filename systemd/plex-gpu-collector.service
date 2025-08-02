@@ -1,0 +1,23 @@
+[Unit]
+Description=Plex GPU Collector Service with Historical Data API
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=PROJECT_PATH_PLACEHOLDER
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/python3 PROJECT_PATH_PLACEHOLDER/src/gpu_collector_service.py
+Restart=always
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=plex-gpu-collector
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=32768
+
+[Install]
+WantedBy=multi-user.target
