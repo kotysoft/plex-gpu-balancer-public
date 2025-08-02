@@ -1,97 +1,207 @@
 #!/bin/bash
 
 # Plex GPU Balancer - Proxmox Container Installer
-# Interactive installation script for Proxmox VE
+# Full-screen BIOS-style interactive installer
 # https://github.com/kotysoft/plex-gpu-balancer-public
 
-set -e  # Exit on any error
+set -e
 
-# Color definitions for modern terminal interface
-readonly RED='\033[0;31m'
-readonly GREEN='\033[0;32m'
-readonly YELLOW='\033[1;33m'
-readonly BLUE='\033[0;34m'
-readonly PURPLE='\033[0;35m'
-readonly CYAN='\033[0;36m'
-readonly WHITE='\033[1;37m'
-readonly GRAY='\033[0;37m'
-readonly BOLD='\033[1m'
-readonly NC='\033[0m' # No Color
+# Terminal control
+TERM_COLS=$(tput cols)
+TERM_ROWS=$(tput lines)
+
+# Colors for BIOS-like interface
+readonly BLUE_BG='\033[44m'
+readonly CYAN_BG='\033[46m'
+readonly WHITE_BG='\033[47m'
+readonly BLACK_BG='\033[40m'
+readonly RED_BG='\033[41m'
+readonly GREEN_BG='\033[42m'
+readonly YELLOW_BG='\033[43m'
+
+readonly WHITE_TEXT='\033[1;37m'
+readonly BLACK_TEXT='\033[0;30m'
+readonly BLUE_TEXT='\033[1;34m'
+readonly CYAN_TEXT='\033[1;36m'
+readonly YELLOW_TEXT='\033[1;33m'
+readonly RED_TEXT='\033[1;31m'
+readonly GREEN_TEXT='\033[1;32m'
+readonly GRAY_TEXT='\033[0;37m'
+readonly NC='\033[0m'
 
 # Global variables
 CONTAINER_ID=""
+CPU_CORES=""
+MEMORY=""
 CONTAINER_IP=""
 GATEWAY=""
-DNS=""
-STORAGE=""
+DNS="8.8.8.8"
 PLEX_SERVER=""
 PLEX_TOKEN=""
 PLEX_SERVER_NAME=""
 PROJECT_PATH="/opt/plex-gpu-balancer"
 
-# Terminal interface functions
-print_header() {
+# Terminal functions
+clear_screen() {
     clear
-    echo -e "${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║              ${WHITE}PLEX GPU BALANCER INSTALLER${CYAN}              ║${NC}"
-    echo -e "${CYAN}║                   ${GRAY}Proxmox Container Setup${CYAN}                 ║${NC}"
-    echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
-    echo
+    tput cup 0 0
 }
 
-print_warning() {
-    echo -e "${YELLOW}╔════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${YELLOW}║                      ${RED}⚠ WARNING ⚠${YELLOW}                       ║${NC}"
-    echo -e "${YELLOW}║                                                            ║${NC}"
-    echo -e "${YELLOW}║  ${WHITE}This is a WORK IN PROGRESS project - not fully tested${YELLOW}  ║${NC}"
-    echo -e "${YELLOW}║                                                            ║${NC}"
-    echo -e "${YELLOW}║  ${WHITE}Requirements:${YELLOW}                                           ║${NC}"
-    echo -e "${YELLOW}║  ${GRAY}• Must run on Proxmox VE host${YELLOW}                          ║${NC}"
-    echo -e "${YELLOW}║  ${GRAY}• Container MUST be PRIVILEGED to access GPU details${YELLOW}   ║${NC}"
-    echo -e "${YELLOW}║  ${GRAY}• NVIDIA/Intel GPU hardware acceleration required${YELLOW}      ║${NC}"
-    echo -e "${YELLOW}╚════════════════════════════════════════════════════════════╝${NC}"
-    echo
-    echo -e "${WHITE}Press ${GREEN}ENTER${WHITE} to continue or ${RED}Ctrl+C${WHITE} to cancel...${NC}"
-    read -r </dev/tty
+goto_xy() {
+    tput cup "$1" "$2"
 }
 
-print_step() {
-    echo -e "\n${BLUE}▶ ${WHITE}$1${NC}"
-    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+print_at() {
+    local row=$1
+    local col=$2
+    local text="$3"
+    goto_xy "$row" "$col"
+    echo -n "$text"
 }
 
-print_success() {
-    echo -e "${GREEN}✓ $1${NC}"
+center_text() {
+    local text="$1"
+    local width=${2:-$TERM_COLS}
+    local padding=$(( (width - ${#text}) / 2 ))
+    printf "%*s%s" "$padding" "" "$text"
 }
 
-print_error() {
-    echo -e "${RED}✗ Error: $1${NC}"
+draw_box() {
+    local top=$1
+    local left=$2
+    local height=$3
+    local width=$4
+    local color="$5"
+    
+    # Top border
+    goto_xy "$top" "$left"
+    echo -ne "${color}┌$(printf '─%.0s' $(seq 1 $((width-2))))┐${NC}"
+    
+    # Side borders
+    for ((i=1; i<height-1; i++)); do
+        goto_xy $((top+i)) "$left"
+        echo -ne "${color}│$(printf ' %.0s' $(seq 1 $((width-2))))│${NC}"
+    done
+    
+    # Bottom border
+    goto_xy $((top+height-1)) "$left"
+    echo -ne "${color}└$(printf '─%.0s' $(seq 1 $((width-2))))┘${NC}"
 }
 
-print_info() {
-    echo -e "${CYAN}ℹ $1${NC}"
+draw_title_bar() {
+    goto_xy 0 0
+    echo -ne "${BLUE_BG}${WHITE_TEXT}"
+    printf "%-${TERM_COLS}s" " PLEX GPU BALANCER INSTALLER v1.0"
+    echo -ne "${NC}"
+    
+    goto_xy 1 0
+    echo -ne "${CYAN_BG}${BLACK_TEXT}"
+    printf "%-${TERM_COLS}s" " Proxmox VE Container Setup Wizard"
+    echo -ne "${NC}"
 }
 
-# Validation functions
+draw_status_bar() {
+    local message="$1"
+    goto_xy $((TERM_ROWS-1)) 0
+    echo -ne "${BLUE_BG}${WHITE_TEXT}"
+    printf "%-${TERM_COLS}s" " $message"
+    echo -ne "${NC}"
+}
+
+draw_warning_screen() {
+    clear_screen
+    draw_title_bar
+    
+    local box_width=70
+    local box_height=15
+    local box_top=5
+    local box_left=$(( (TERM_COLS - box_width) / 2 ))
+    
+    draw_box "$box_top" "$box_left" "$box_height" "$box_width" "${RED_BG}${WHITE_TEXT}"
+    
+    print_at $((box_top+2)) $((box_left+2)) "${RED_BG}${WHITE_TEXT}$(center_text "⚠ WARNING - WORK IN PROGRESS ⚠" $((box_width-4)))"
+    print_at $((box_top+4)) $((box_left+2)) "${RED_BG}${WHITE_TEXT}This project is NOT fully tested and should be used with caution."
+    print_at $((box_top+6)) $((box_left+2)) "${RED_BG}${WHITE_TEXT}REQUIREMENTS:"
+    print_at $((box_top+7)) $((box_left+4)) "${RED_BG}${WHITE_TEXT}• Must run on Proxmox VE host (not in container)"
+    print_at $((box_top+8)) $((box_left+4)) "${RED_BG}${WHITE_TEXT}• Container MUST be PRIVILEGED for GPU access"
+    print_at $((box_top+9)) $((box_left+4)) "${RED_BG}${WHITE_TEXT}• NVIDIA/Intel GPU with hardware acceleration"
+    print_at $((box_top+10)) $((box_left+4)) "${RED_BG}${WHITE_TEXT}• Plex Pass subscription required"
+    
+    print_at $((box_top+12)) $((box_left+2)) "${RED_BG}${WHITE_TEXT}$(center_text "Press ENTER to continue or Ctrl+C to exit" $((box_width-4)))"
+    echo -ne "${NC}"
+    
+    draw_status_bar "WARNING: Read carefully before proceeding"
+    read -r
+}
+
+draw_input_screen() {
+    local title="$1"
+    local fields=("${@:2}")
+    
+    clear_screen
+    draw_title_bar
+    
+    local box_width=80
+    local box_height=$((${#fields[@]} * 2 + 8))
+    local box_top=4
+    local box_left=$(( (TERM_COLS - box_width) / 2 ))
+    
+    draw_box "$box_top" "$box_left" "$box_height" "$box_width" "${WHITE_BG}${BLACK_TEXT}"
+    
+    print_at $((box_top+1)) $((box_left+2)) "${WHITE_BG}${BLUE_TEXT}$(center_text "$title" $((box_width-4)))"
+    print_at $((box_top+2)) $((box_left+2)) "${WHITE_BG}${BLACK_TEXT}$(printf '─%.0s' $((box_width-4)))"
+    
+    local row=$((box_top+4))
+    for field in "${fields[@]}"; do
+        print_at "$row" $((box_left+4)) "${WHITE_BG}${BLACK_TEXT}$field"
+        ((row+=2))
+    done
+    
+    echo -ne "${NC}"
+}
+
+get_input() {
+    local prompt="$1"
+    local default="$2"
+    local row="$3"
+    local col="$4"
+    local input=""
+    
+    print_at "$row" "$col" "${WHITE_BG}${BLACK_TEXT}$prompt"
+    if [ -n "$default" ]; then
+        print_at "$row" $((col + ${#prompt} + 1)) "${WHITE_BG}${GRAY_TEXT}[$default]"
+    fi
+    print_at "$row" $((col + ${#prompt} + ${#default} + 4)) "${WHITE_BG}${BLACK_TEXT}> "
+    
+    goto_xy "$row" $((col + ${#prompt} + ${#default} + 6))
+    echo -ne "${WHITE_BG}${BLACK_TEXT}"
+    read -r input
+    echo -ne "${NC}"
+    
+    if [ -z "$input" ] && [ -n "$default" ]; then
+        input="$default"
+    fi
+    
+    echo "$input"
+}
+
 validate_container_id() {
-    if [[ ! "$1" =~ ^[0-9]+$ ]] || [ "$1" -lt 100 ] || [ "$1" -gt 999999 ]; then
+    local id="$1"
+    if [[ ! "$id" =~ ^[0-9]+$ ]] || [ "$id" -lt 100 ] || [ "$id" -gt 999999 ]; then
         return 1
     fi
-    
-    # Check if container ID already exists
-    if pct status "$1" >/dev/null 2>&1; then
+    if pct status "$id" >/dev/null 2>&1; then
         return 1
     fi
-    
     return 0
 }
 
 validate_ip() {
     local ip="$1"
     if [[ $ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-        IFS='.' read -ra ADDR <<< "$ip"
-        for i in "${ADDR[@]}"; do
-            if [ "$i" -gt 255 ]; then
+        IFS='.' read -ra parts <<< "$ip"
+        for part in "${parts[@]}"; do
+            if [ "$part" -gt 255 ]; then
                 return 1
             fi
         done
@@ -100,198 +210,205 @@ validate_ip() {
     return 1
 }
 
-validate_plex_connection() {
+validate_plex() {
     local server="$1"
     local token="$2"
     
-    print_info "Validating Plex connection..."
-    
-    # Test connection and get server name
     local response
     response=$(curl -s -w "%{http_code}" -o /tmp/plex_test.json \
         "http://${server}/?X-Plex-Token=${token}" \
         --connect-timeout 10 \
-        --max-time 15 2>/dev/null)
+        --max-time 15 2>/dev/null || echo "000")
     
     local http_code="${response: -3}"
     
-    if [ "$http_code" = "200" ]; then
-        if [ -f /tmp/plex_test.json ]; then
+    if [ "$http_code" = "200" ] && [ -f /tmp/plex_test.json ]; then
+        # Parse JSON to get friendlyName
+        if command -v python3 >/dev/null 2>&1; then
+            PLEX_SERVER_NAME=$(python3 -c "
+import json, sys
+try:
+    with open('/tmp/plex_test.json') as f:
+        data = json.load(f)
+    print(data.get('MediaContainer', {}).get('friendlyName', 'Unknown'))
+except:
+    print('Unknown')
+" 2>/dev/null)
+        else
             PLEX_SERVER_NAME=$(grep -o '"friendlyName":"[^"]*"' /tmp/plex_test.json | cut -d'"' -f4 2>/dev/null || echo "Unknown")
-            rm -f /tmp/plex_test.json
-            return 0
         fi
+        rm -f /tmp/plex_test.json
+        return 0
     fi
     
     rm -f /tmp/plex_test.json
     return 1
 }
 
-# Configuration input functions
-get_container_config() {
-    print_step "Container Configuration"
+show_error() {
+    local message="$1"
+    local row="$2"
+    local col="$3"
     
+    print_at "$row" "$col" "${RED_BG}${WHITE_TEXT} ERROR: $message ${NC}"
+    sleep 2
+    print_at "$row" "$col" "$(printf ' %.0s' $((${#message} + 10)))"
+}
+
+container_config_screen() {
     while true; do
-        echo -e "${WHITE}Enter Container ID ${GRAY}(100-999999):${NC}"
-        read -r -p "> " CONTAINER_ID </dev/tty
+        draw_input_screen "CONTAINER CONFIGURATION" \
+            "Container ID (100-999999):" \
+            "CPU Cores:" \
+            "Memory (MB):"
         
-        if validate_container_id "$CONTAINER_ID"; then
-            print_success "Container ID $CONTAINER_ID is available"
+        draw_status_bar "Enter container configuration details"
+        
+        local box_left=$(( (TERM_COLS - 80) / 2 ))
+        local base_row=8
+        
+        CONTAINER_ID=$(get_input "Container ID:" "" "$base_row" $((box_left + 4)))
+        if ! validate_container_id "$CONTAINER_ID"; then
+            show_error "Invalid ID or container exists" $((base_row + 1)) $((box_left + 4))
+            continue
+        fi
+        
+        CPU_CORES=$(get_input "CPU Cores:" "1" $((base_row + 2)) $((box_left + 4)))
+        if [[ ! "$CPU_CORES" =~ ^[0-9]+$ ]] || [ "$CPU_CORES" -lt 1 ] || [ "$CPU_CORES" -gt 32 ]; then
+            show_error "CPU cores must be 1-32" $((base_row + 3)) $((box_left + 4))
+            continue
+        fi
+        
+        MEMORY=$(get_input "Memory (MB):" "512" $((base_row + 4)) $((box_left + 4)))
+        if [[ ! "$MEMORY" =~ ^[0-9]+$ ]] || [ "$MEMORY" -lt 128 ]; then
+            show_error "Memory must be at least 128MB" $((base_row + 5)) $((box_left + 4))
+            continue
+        fi
+        
+        break
+    done
+}
+
+network_config_screen() {
+    draw_input_screen "NETWORK CONFIGURATION" \
+        "Use DHCP? (y/n):" \
+        "Static IP (if not DHCP):" \
+        "Gateway (if static):" \
+        "DNS Server:"
+    
+    draw_status_bar "Configure container network settings"
+    
+    local box_left=$(( (TERM_COLS - 80) / 2 ))
+    local base_row=8
+    
+    local use_dhcp=$(get_input "Use DHCP?" "y" "$base_row" $((box_left + 4)))
+    
+    if [[ ! "$use_dhcp" =~ ^[Yy] ]]; then
+        while true; do
+            CONTAINER_IP=$(get_input "Static IP:" "" $((base_row + 2)) $((box_left + 4)))
+            if ! validate_ip "$CONTAINER_IP"; then
+                show_error "Invalid IP address" $((base_row + 3)) $((box_left + 4))
+                continue
+            fi
+            break
+        done
+        
+        while true; do
+            GATEWAY=$(get_input "Gateway:" "" $((base_row + 4)) $((box_left + 4)))
+            if ! validate_ip "$GATEWAY"; then
+                show_error "Invalid gateway IP" $((base_row + 5)) $((box_left + 4))
+                continue
+            fi
+            break
+        done
+    fi
+    
+    local dns_input=$(get_input "DNS Server:" "8.8.8.8" $((base_row + 6)) $((box_left + 4)))
+    if validate_ip "$dns_input"; then
+        DNS="$dns_input"
+    fi
+}
+
+plex_config_screen() {
+    while true; do
+        draw_input_screen "PLEX SERVER CONFIGURATION" \
+            "Plex Server (IP:PORT):" \
+            "Plex Token:" \
+            "" \
+            "To get your token:" \
+            "1. Open Plex in browser and login" \
+            "2. Press F12, go to Console tab" \
+            "3. Type: localStorage.getItem('myPlexAccessToken')" \
+            "4. Copy the token (without quotes)"
+        
+        draw_status_bar "Configure Plex server connection"
+        
+        local box_left=$(( (TERM_COLS - 80) / 2 ))
+        local base_row=8
+        
+        PLEX_SERVER=$(get_input "Server (IP:PORT):" "" "$base_row" $((box_left + 4)))
+        if [ -z "$PLEX_SERVER" ]; then
+            show_error "Server address required" $((base_row + 1)) $((box_left + 4))
+            continue
+        fi
+        
+        PLEX_TOKEN=$(get_input "Token:" "" $((base_row + 2)) $((box_left + 4)))
+        if [ -z "$PLEX_TOKEN" ]; then
+            show_error "Token required" $((base_row + 3)) $((box_left + 4))
+            continue
+        fi
+        
+        # Show validation message
+        print_at $((base_row + 4)) $((box_left + 4)) "${WHITE_BG}${BLUE_TEXT}Validating connection...${NC}"
+        
+        if validate_plex "$PLEX_SERVER" "$PLEX_TOKEN"; then
+            print_at $((base_row + 4)) $((box_left + 4)) "${GREEN_BG}${WHITE_TEXT}✓ Connected to: $PLEX_SERVER_NAME${NC}"
+            sleep 2
             break
         else
-            print_error "Invalid ID or container already exists"
-        fi
-    done
-    
-    echo -e "\n${WHITE}Select CPU cores ${GRAY}(default: 1):${NC}"
-    echo -e "${GRAY}1) 1 core   2) 2 cores   3) 4 cores${NC}"
-    read -r -p "> " cpu_choice </dev/tty
-    case $cpu_choice in
-        2) CPU_CORES=2 ;;
-        3) CPU_CORES=4 ;;
-        *) CPU_CORES=1 ;;
-    esac
-    
-    echo -e "\n${WHITE}Select RAM ${GRAY}(default: 512MB):${NC}"
-    echo -e "${GRAY}1) 512MB   2) 1GB   3) 2GB   4) 4GB${NC}"
-    read -r -p "> " ram_choice </dev/tty
-    case $ram_choice in
-        2) MEMORY=1024 ;;
-        3) MEMORY=2048 ;;
-        4) MEMORY=4096 ;;
-        *) MEMORY=512 ;;
-    esac
-}
-
-get_storage_config() {
-    print_step "Storage Configuration"
-    
-    echo -e "${WHITE}Available storage locations:${NC}"
-    local i=1
-    local storages=()
-    
-    # Get available storages
-    while IFS= read -r line; do
-        if [[ $line =~ ^[a-zA-Z0-9_-]+[[:space:]]+[a-zA-Z0-9_-]+[[:space:]]+[0-9]+[[:space:]]+[0-9]+ ]]; then
-            local storage_name=$(echo "$line" | awk '{print $1}')
-            local storage_type=$(echo "$line" | awk '{print $2}')
-            local storage_size=$(echo "$line" | awk '{print $4}')
-            
-            if [[ "$storage_type" =~ (dir|zfspool|lvm|lvmthin) ]]; then
-                storages+=("$storage_name")
-                echo -e "${GRAY}$i) $storage_name ${CYAN}($storage_type, ${storage_size}GB)${NC}"
-                ((i++))
-            fi
-        fi
-    done < <(pvesm status 2>/dev/null || echo "local dir 0 100")
-    
-    if [ ${#storages[@]} -eq 0 ]; then
-        storages=("local")
-        echo -e "${GRAY}1) local ${CYAN}(default)${NC}"
-    fi
-    
-    echo -e "\n${WHITE}Select storage ${GRAY}(default: 1):${NC}"
-    read -r -p "> " storage_choice </dev/tty
-    
-    if [[ "$storage_choice" =~ ^[0-9]+$ ]] && [ "$storage_choice" -le "${#storages[@]}" ] && [ "$storage_choice" -gt 0 ]; then
-        STORAGE="${storages[$((storage_choice-1))]}"
-    else
-        STORAGE="${storages[0]}"
-    fi
-    
-    print_success "Selected storage: $STORAGE"
-}
-
-get_network_config() {
-    print_step "Network Configuration"
-    
-    echo -e "${WHITE}Network Configuration:${NC}"
-    echo -e "${GRAY}1) DHCP (automatic)${NC}"
-    echo -e "${GRAY}2) Static IP${NC}"
-    read -r -p "> " net_choice </dev/tty
-    
-    if [ "$net_choice" = "2" ]; then
-        while true; do
-            echo -e "\n${WHITE}Enter static IP address:${NC}"
-            read -r -p "> " CONTAINER_IP </dev/tty
-            if validate_ip "$CONTAINER_IP"; then
-                break
-            else
-                print_error "Invalid IP address format"
-            fi
-        done
-        
-        while true; do
-            echo -e "\n${WHITE}Enter gateway IP:${NC}"
-            read -r -p "> " GATEWAY </dev/tty
-            if validate_ip "$GATEWAY"; then
-                break
-            else
-                print_error "Invalid gateway address format"
-            fi
-        done
-        
-        while true; do
-            echo -e "\n${WHITE}Enter DNS server IP ${GRAY}(default: 8.8.8.8):${NC}"
-            read -r -p "> " DNS </dev/tty
-            if [ -z "$DNS" ]; then
-                DNS="8.8.8.8"
-                break
-            elif validate_ip "$DNS"; then
-                break
-            else
-                print_error "Invalid DNS address format"
-            fi
-        done
-    fi
-}
-
-get_plex_config() {
-    print_step "Plex Server Configuration"
-    
-    echo -e "${WHITE}Enter your Plex server address ${GRAY}(IP:PORT):${NC}"
-    echo -e "${GRAY}Example: 192.168.1.100:32400${NC}"
-    read -r -p "> " PLEX_SERVER </dev/tty
-    
-    echo -e "\n${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║                    ${WHITE}Getting Plex Token${CYAN}                     ║${NC}"
-    echo -e "${CYAN}╚════════════════════════════════════════════════════════════╝${NC}"
-    echo -e "${WHITE}1. Open Plex in your browser and log in${NC}"
-    echo -e "${WHITE}2. Press ${YELLOW}F12${WHITE} to open Developer Tools${NC}"
-    echo -e "${WHITE}3. Go to ${YELLOW}Console${WHITE} tab${NC}"
-    echo -e "${WHITE}4. Paste this command and press Enter:${NC}"
-    echo
-    echo -e "${GREEN}   localStorage.getItem('myPlexAccessToken')${NC}"
-    echo
-    echo -e "${WHITE}5. Copy the token (without quotes) and paste it below${NC}"
-    echo
-    
-    while true; do
-        echo -e "${WHITE}Enter your Plex token:${NC}"
-        read -r -p "> " PLEX_TOKEN </dev/tty
-        
-        if [ -n "$PLEX_TOKEN" ]; then
-            if validate_plex_connection "$PLEX_SERVER" "$PLEX_TOKEN"; then
-                print_success "Connected to Plex server: $PLEX_SERVER_NAME"
-                echo -e "${WHITE}Is this correct? ${GRAY}(y/n):${NC}"
-                read -r -p "> " confirm </dev/tty
-                if [[ "$confirm" =~ ^[Yy] ]]; then
-                    break
-                fi
-            else
-                print_error "Could not connect to Plex server. Please check server address and token."
-            fi
-        else
-            print_error "Token cannot be empty"
+            show_error "Cannot connect to Plex server" $((base_row + 4)) $((box_left + 4))
         fi
     done
 }
 
-# Container creation and setup functions
+show_progress() {
+    local title="$1"
+    local message="$2"
+    local step="$3"
+    local total="$4"
+    
+    clear_screen
+    draw_title_bar
+    
+    local box_width=60
+    local box_height=10
+    local box_top=8
+    local box_left=$(( (TERM_COLS - box_width) / 2 ))
+    
+    draw_box "$box_top" "$box_left" "$box_height" "$box_width" "${GREEN_BG}${WHITE_TEXT}"
+    
+    print_at $((box_top+1)) $((box_left+2)) "${GREEN_BG}${WHITE_TEXT}$(center_text "$title" $((box_width-4)))"
+    print_at $((box_top+3)) $((box_left+2)) "${GREEN_BG}${WHITE_TEXT}$message"
+    
+    if [ -n "$step" ] && [ -n "$total" ]; then
+        local percent=$(( step * 100 / total ))
+        local bar_width=40
+        local filled=$(( percent * bar_width / 100 ))
+        
+        print_at $((box_top+5)) $((box_left+2)) "${GREEN_BG}${WHITE_TEXT}Progress: [$percent%]"
+        print_at $((box_top+6)) $((box_left+2)) "${GREEN_BG}${WHITE_TEXT}["
+        print_at $((box_top+6)) $((box_left+3)) "${GREEN_BG}${WHITE_TEXT}$(printf '█%.0s' $(seq 1 $filled))"
+        print_at $((box_top+6)) $((box_left+3+filled)) "${GREEN_BG}${WHITE_TEXT}$(printf '░%.0s' $(seq 1 $((bar_width-filled))))"
+        print_at $((box_top+6)) $((box_left+3+bar_width)) "${GREEN_BG}${WHITE_TEXT}]"
+    fi
+    
+    echo -ne "${NC}"
+    draw_status_bar "$message"
+}
+
 create_container() {
-    print_step "Creating Proxmox Container"
+    show_progress "CREATING CONTAINER" "Setting up Proxmox container..." 1 8
     
-    # Build network config
     local net_config="name=eth0,bridge=vmbr0"
     if [ -n "$CONTAINER_IP" ]; then
         net_config+=",ip=${CONTAINER_IP}/24,gw=${GATEWAY}"
@@ -299,116 +416,86 @@ create_container() {
         net_config+=",ip=dhcp"
     fi
     
-    # Create container
-    print_info "Creating container $CONTAINER_ID..."
-    
-    pct create "$CONTAINER_ID" \
+    # Fix: Use --unprivileged 0 instead of --privileged 1
+    if ! pct create "$CONTAINER_ID" \
         local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst \
-        --storage "$STORAGE" \
         --memory "$MEMORY" \
         --cores "$CPU_CORES" \
-        --rootfs "$STORAGE:4" \
+        --rootfs "local:4" \
         --net0 "$net_config" \
         --nameserver "$DNS" \
         --hostname "plex-gpu-balancer" \
-        --privileged 1 \
+        --unprivileged 0 \
         --features nesting=1 \
-        --onboot 1 \
-        --unprivileged 0
-    
-    print_success "Container created successfully"
+        --onboot 1 >/dev/null 2>&1; then
+        
+        show_error "Failed to create container" 15 10
+        exit 1
+    fi
 }
 
 setup_gpu_passthrough() {
-    print_step "Configuring GPU Passthrough"
+    show_progress "GPU PASSTHROUGH" "Configuring GPU access..." 2 8
     
-    # Add GPU devices to container config
     local config_file="/etc/pve/lxc/${CONTAINER_ID}.conf"
     
-    print_info "Configuring NVIDIA GPU passthrough..."
-    {
-        echo "# NVIDIA GPU passthrough"
-        echo "lxc.cgroup2.devices.allow: c 195:* rwm"
-        echo "lxc.cgroup2.devices.allow: c 509:* rwm"
-        echo "lxc.mount.entry: /dev/nvidia0 dev/nvidia0 none bind,optional,create=file"
-        echo "lxc.mount.entry: /dev/nvidiactl dev/nvidiactl none bind,optional,create=file"
-        echo "lxc.mount.entry: /dev/nvidia-uvm dev/nvidia-uvm none bind,optional,create=file"
-        echo "lxc.mount.entry: /dev/nvidia-modeset dev/nvidia-modeset none bind,optional,create=file"
-        echo "lxc.mount.entry: /dev/nvidia-uvm-tools dev/nvidia-uvm-tools none bind,optional,create=file"
-    } >> "$config_file"
-    
-    print_info "Configuring Intel GPU passthrough..."
-    {
-        echo "# Intel GPU passthrough"
-        echo "lxc.cgroup2.devices.allow: c 226:* rwm"
-        echo "lxc.mount.entry: /dev/dri dev/dri none bind,optional,create=dir"
-    } >> "$config_file"
-    
-    print_success "GPU passthrough configured"
+    # Add GPU passthrough configuration
+    cat >> "$config_file" << EOF
+
+# NVIDIA GPU passthrough
+lxc.cgroup2.devices.allow: c 195:* rwm
+lxc.cgroup2.devices.allow: c 509:* rwm
+lxc.mount.entry: /dev/nvidia0 dev/nvidia0 none bind,optional,create=file
+lxc.mount.entry: /dev/nvidiactl dev/nvidiactl none bind,optional,create=file
+lxc.mount.entry: /dev/nvidia-uvm dev/nvidia-uvm none bind,optional,create=file
+lxc.mount.entry: /dev/nvidia-modeset dev/nvidia-modeset none bind,optional,create=file
+lxc.mount.entry: /dev/nvidia-uvm-tools dev/nvidia-uvm-tools none bind,optional,create=file
+
+# Intel GPU passthrough  
+lxc.cgroup2.devices.allow: c 226:* rwm
+lxc.mount.entry: /dev/dri dev/dri none bind,optional,create=dir
+EOF
 }
 
 start_container() {
-    print_step "Starting Container"
+    show_progress "STARTING CONTAINER" "Booting container..." 3 8
     
-    print_info "Starting container $CONTAINER_ID..."
-    pct start "$CONTAINER_ID"
+    if ! pct start "$CONTAINER_ID" >/dev/null 2>&1; then
+        show_error "Failed to start container" 15 10
+        exit 1
+    fi
     
-    print_info "Waiting for container to be ready..."
     sleep 10
-    
-    print_success "Container started successfully"
 }
 
 install_dependencies() {
-    print_step "Installing Dependencies"
+    show_progress "INSTALLING PACKAGES" "Updating and installing packages..." 4 8
     
-    print_info "Updating package lists..."
-    pct exec "$CONTAINER_ID" -- apt update
-    
-    print_info "Installing system packages..."
+    pct exec "$CONTAINER_ID" -- apt update >/dev/null 2>&1
     pct exec "$CONTAINER_ID" -- apt install -y \
-        python3 \
-        python3-pip \
-        git \
-        curl \
-        wget \
-        unzip \
-        intel-gpu-tools \
-        nvidia-utils-535
-    
-    print_success "Dependencies installed"
+        python3 python3-pip git curl wget unzip \
+        intel-gpu-tools nvidia-utils-535 >/dev/null 2>&1
 }
 
 download_project() {
-    print_step "Downloading Plex GPU Balancer"
+    show_progress "DOWNLOADING PROJECT" "Getting Plex GPU Balancer..." 5 8
     
-    print_info "Creating temporary directory..."
-    pct exec "$CONTAINER_ID" -- mkdir -p /tmp/plex-gpu-balancer-download
-    
-    print_info "Downloading latest release..."
+    pct exec "$CONTAINER_ID" -- mkdir -p /tmp/download
     pct exec "$CONTAINER_ID" -- git clone \
         https://github.com/kotysoft/plex-gpu-balancer-public.git \
-        /tmp/plex-gpu-balancer-download
+        /tmp/download >/dev/null 2>&1
     
-    print_info "Moving files to project directory..."
     pct exec "$CONTAINER_ID" -- mkdir -p "$PROJECT_PATH"
-    pct exec "$CONTAINER_ID" -- cp -r /tmp/plex-gpu-balancer-download/* "$PROJECT_PATH/"
-    pct exec "$CONTAINER_ID" -- rm -rf /tmp/plex-gpu-balancer-download
+    pct exec "$CONTAINER_ID" -- cp -r /tmp/download/* "$PROJECT_PATH/"
+    pct exec "$CONTAINER_ID" -- rm -rf /tmp/download
     
-    print_info "Installing Python dependencies..."
-    pct exec "$CONTAINER_ID" -- pip3 install -r "$PROJECT_PATH/requirements.txt"
-    
-    print_success "Project downloaded and dependencies installed"
+    pct exec "$CONTAINER_ID" -- pip3 install -r "$PROJECT_PATH/requirements.txt" >/dev/null 2>&1
 }
 
-create_config_files() {
-    print_step "Creating Configuration Files"
+create_configs() {
+    show_progress "CREATING CONFIGS" "Setting up configuration files..." 6 8
     
-    # Create main config
-    print_info "Creating main configuration..."
     pct exec "$CONTAINER_ID" -- bash -c "cat > $PROJECT_PATH/config.conf << EOF
-# Plex GPU Balancer Main Configuration
-
 [system]
 project_path = $PROJECT_PATH
 
@@ -417,112 +504,91 @@ server = $PLEX_SERVER
 token = $PLEX_TOKEN
 EOF"
     
-    # Create balance config from template
-    print_info "Creating balance configuration..."
     pct exec "$CONTAINER_ID" -- cp \
         "$PROJECT_PATH/balance.conf.template" \
         "$PROJECT_PATH/balance.conf"
-    
-    print_success "Configuration files created"
 }
 
 install_services() {
-    print_step "Installing System Services"
+    show_progress "INSTALLING SERVICES" "Setting up system services..." 7 8
     
-    print_info "Running service installer..."
-    pct exec "$CONTAINER_ID" -- bash "$PROJECT_PATH/service-install.sh"
-    
-    print_success "System services installed and started"
+    pct exec "$CONTAINER_ID" -- bash "$PROJECT_PATH/service-install.sh" >/dev/null 2>&1
 }
 
-print_summary() {
-    clear
-    print_header
+show_completion() {
+    show_progress "INSTALLATION COMPLETE" "Setup finished successfully!" 8 8
     
-    echo -e "${GREEN}╔════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║                  ${WHITE}INSTALLATION COMPLETE!${GREEN}                 ║${NC}"
-    echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${NC}"
-    echo
+    sleep 3
     
-    echo -e "${WHITE}Container Information:${NC}"
-    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${CYAN}Container ID:${NC} $CONTAINER_ID"
-    echo -e "${CYAN}Hostname:${NC} plex-gpu-balancer"
-    echo -e "${CYAN}Resources:${NC} ${CPU_CORES} CPU cores, ${MEMORY}MB RAM"
-    echo -e "${CYAN}Storage:${NC} $STORAGE"
+    clear_screen
+    draw_title_bar
+    
+    local box_width=70
+    local box_height=20
+    local box_top=3
+    local box_left=$(( (TERM_COLS - box_width) / 2 ))
+    
+    draw_box "$box_top" "$box_left" "$box_height" "$box_width" "${GREEN_BG}${WHITE_TEXT}"
+    
+    print_at $((box_top+1)) $((box_left+2)) "${GREEN_BG}${WHITE_TEXT}$(center_text "INSTALLATION COMPLETED SUCCESSFULLY" $((box_width-4)))"
+    print_at $((box_top+3)) $((box_left+2)) "${GREEN_BG}${WHITE_TEXT}Container ID: $CONTAINER_ID"
+    print_at $((box_top+4)) $((box_left+2)) "${GREEN_BG}${WHITE_TEXT}Hostname: plex-gpu-balancer"
+    print_at $((box_top+5)) $((box_left+2)) "${GREEN_BG}${WHITE_TEXT}Resources: ${CPU_CORES} CPU, ${MEMORY}MB RAM"
     
     if [ -n "$CONTAINER_IP" ]; then
-        echo -e "${CYAN}IP Address:${NC} $CONTAINER_IP"
-        echo -e "${CYAN}Gateway:${NC} $GATEWAY"
-        echo -e "${CYAN}DNS:${NC} $DNS"
+        print_at $((box_top+6)) $((box_left+2)) "${GREEN_BG}${WHITE_TEXT}IP Address: $CONTAINER_IP"
     else
-        echo -e "${CYAN}Network:${NC} DHCP"
+        print_at $((box_top+6)) $((box_left+2)) "${GREEN_BG}${WHITE_TEXT}Network: DHCP"
     fi
     
-    echo
-    echo -e "${WHITE}Plex Configuration:${NC}"
-    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${CYAN}Server:${NC} $PLEX_SERVER"
-    echo -e "${CYAN}Server Name:${NC} $PLEX_SERVER_NAME"
+    print_at $((box_top+8)) $((box_left+2)) "${GREEN_BG}${WHITE_TEXT}Plex Server: $PLEX_SERVER"
+    print_at $((box_top+9)) $((box_left+2)) "${GREEN_BG}${WHITE_TEXT}Server Name: $PLEX_SERVER_NAME"
     
-    echo
-    echo -e "${WHITE}Service Information:${NC}"
-    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${CYAN}Dashboard URL:${NC} http://${CONTAINER_IP:-localhost}:8080"
-    echo -e "${CYAN}Project Path:${NC} $PROJECT_PATH"
-    echo -e "${CYAN}Services:${NC} plex-gpu-collector, plex-dashboard, plex-balancer"
+    print_at $((box_top+11)) $((box_left+2)) "${GREEN_BG}${WHITE_TEXT}Dashboard: http://${CONTAINER_IP:-localhost}:8080"
+    print_at $((box_top+12)) $((box_left+2)) "${GREEN_BG}${WHITE_TEXT}Project Path: $PROJECT_PATH"
     
-    echo
-    echo -e "${WHITE}Useful Commands:${NC}"
-    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${CYAN}Enter container:${NC} pct enter $CONTAINER_ID"
-    echo -e "${CYAN}Check services:${NC} pct exec $CONTAINER_ID -- systemctl status plex-gpu-collector"
-    echo -e "${CYAN}View logs:${NC} pct exec $CONTAINER_ID -- journalctl -u plex-gpu-collector -f"
-    echo -e "${CYAN}Stop container:${NC} pct stop $CONTAINER_ID"
-    echo -e "${CYAN}Start container:${NC} pct start $CONTAINER_ID"
+    print_at $((box_top+14)) $((box_left+2)) "${GREEN_BG}${WHITE_TEXT}USEFUL COMMANDS:"
+    print_at $((box_top+15)) $((box_left+2)) "${GREEN_BG}${WHITE_TEXT}pct enter $CONTAINER_ID"
+    print_at $((box_top+16)) $((box_left+2)) "${GREEN_BG}${WHITE_TEXT}pct exec $CONTAINER_ID -- systemctl status plex-gpu-collector"
     
-    echo
-    echo -e "${YELLOW}Note: All services will start automatically when the container boots.${NC}"
-    echo -e "${YELLOW}GPU passthrough has been configured for both NVIDIA and Intel GPUs.${NC}"
-    echo
+    print_at $((box_top+18)) $((box_left+2)) "${GREEN_BG}${WHITE_TEXT}$(center_text "Press ENTER to exit" $((box_width-4)))"
+    
+    echo -ne "${NC}"
+    draw_status_bar "Installation completed - All services are running"
+    read -r
 }
 
-# Main installation flow
 main() {
-    print_header
-    print_warning
-    
-    # Check if running on Proxmox
+    # Check environment
     if ! command -v pct >/dev/null 2>&1; then
-        print_error "This installer must be run on a Proxmox VE host"
+        echo "ERROR: This installer must be run on a Proxmox VE host"
         exit 1
     fi
     
-    # Check if running as root
     if [ "$EUID" -ne 0 ]; then
-        print_error "This script must be run as root"
-        echo -e "${WHITE}Please run: ${GREEN}curl -sSL https://raw.githubusercontent.com/kotysoft/plex-gpu-balancer-public/main/install.sh | sudo bash${NC}"
+        echo "ERROR: This script must be run as root"
         exit 1
     fi
     
-    # Interactive configuration
-    get_container_config
-    get_storage_config
-    get_network_config
-    get_plex_config
+    # Initialize terminal
+    tput smcup  # Save screen
+    trap 'tput rmcup' EXIT  # Restore screen on exit
     
-    # Container creation and setup
+    # Run installation wizard
+    draw_warning_screen
+    container_config_screen
+    network_config_screen
+    plex_config_screen
+    
+    # Install
     create_container
     setup_gpu_passthrough
     start_container
     install_dependencies
     download_project
-    create_config_files
+    create_configs
     install_services
-    
-    # Show final summary
-    print_summary
+    show_completion
 }
 
-# Run main function
 main "$@"
