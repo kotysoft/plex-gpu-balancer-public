@@ -18,6 +18,7 @@ if [ ! -t 0 ]; then
         echo "Now run:"
         echo "  ./plex-installer.sh"
         echo
+        echo "v0.11"
         exit 0
     else
         echo "❌ Failed to download installer"
