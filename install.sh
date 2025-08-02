@@ -10,13 +10,13 @@ if [ ! -t 0 ]; then
     echo "Downloading Plex GPU Balancer installer..."
     
     # Download to current directory
-    if curl -sSL https://raw.githubusercontent.com/kotysoft/plex-gpu-balancer-public/main/install.sh -o plex-installer.sh; then
-        chmod +x plex-installer.sh
+    if curl -sSL https://raw.githubusercontent.com/kotysoft/plex-gpu-balancer-public/main/install.sh -o installer.sh; then
+        chmod +x installer.sh
         echo
         echo "✅ Installer downloaded successfully!"
         echo
         echo "Now run:"
-        echo "  ./plex-installer.sh"
+        echo "  ./installer.sh"
         echo
         echo "v0.11"
         echo
