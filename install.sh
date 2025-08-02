@@ -52,7 +52,7 @@ print_warning() {
     echo -e "${YELLOW}╚════════════════════════════════════════════════════════════╝${NC}"
     echo
     echo -e "${WHITE}Press ${GREEN}ENTER${WHITE} to continue or ${RED}Ctrl+C${WHITE} to cancel...${NC}"
-    read
+    read -r </dev/tty
 }
 
 print_step() {
@@ -133,7 +133,7 @@ get_container_config() {
     
     while true; do
         echo -e "${WHITE}Enter Container ID ${GRAY}(100-999999):${NC}"
-        read -p "> " CONTAINER_ID
+        read -r -p "> " CONTAINER_ID </dev/tty
         
         if validate_container_id "$CONTAINER_ID"; then
             print_success "Container ID $CONTAINER_ID is available"
@@ -145,7 +145,7 @@ get_container_config() {
     
     echo -e "\n${WHITE}Select CPU cores ${GRAY}(default: 1):${NC}"
     echo -e "${GRAY}1) 1 core   2) 2 cores   3) 4 cores${NC}"
-    read -p "> " cpu_choice
+    read -r -p "> " cpu_choice </dev/tty
     case $cpu_choice in
         2) CPU_CORES=2 ;;
         3) CPU_CORES=4 ;;
@@ -154,7 +154,7 @@ get_container_config() {
     
     echo -e "\n${WHITE}Select RAM ${GRAY}(default: 512MB):${NC}"
     echo -e "${GRAY}1) 512MB   2) 1GB   3) 2GB   4) 4GB${NC}"
-    read -p "> " ram_choice
+    read -r -p "> " ram_choice </dev/tty
     case $ram_choice in
         2) MEMORY=1024 ;;
         3) MEMORY=2048 ;;
@@ -191,7 +191,7 @@ get_storage_config() {
     fi
     
     echo -e "\n${WHITE}Select storage ${GRAY}(default: 1):${NC}"
-    read -p "> " storage_choice
+    read -r -p "> " storage_choice </dev/tty
     
     if [[ "$storage_choice" =~ ^[0-9]+$ ]] && [ "$storage_choice" -le "${#storages[@]}" ] && [ "$storage_choice" -gt 0 ]; then
         STORAGE="${storages[$((storage_choice-1))]}"
@@ -208,12 +208,12 @@ get_network_config() {
     echo -e "${WHITE}Network Configuration:${NC}"
     echo -e "${GRAY}1) DHCP (automatic)${NC}"
     echo -e "${GRAY}2) Static IP${NC}"
-    read -p "> " net_choice
+    read -r -p "> " net_choice </dev/tty
     
     if [ "$net_choice" = "2" ]; then
         while true; do
             echo -e "\n${WHITE}Enter static IP address:${NC}"
-            read -p "> " CONTAINER_IP
+            read -r -p "> " CONTAINER_IP </dev/tty
             if validate_ip "$CONTAINER_IP"; then
                 break
             else
@@ -223,7 +223,7 @@ get_network_config() {
         
         while true; do
             echo -e "\n${WHITE}Enter gateway IP:${NC}"
-            read -p "> " GATEWAY
+            read -r -p "> " GATEWAY </dev/tty
             if validate_ip "$GATEWAY"; then
                 break
             else
@@ -233,7 +233,7 @@ get_network_config() {
         
         while true; do
             echo -e "\n${WHITE}Enter DNS server IP ${GRAY}(default: 8.8.8.8):${NC}"
-            read -p "> " DNS
+            read -r -p "> " DNS </dev/tty
             if [ -z "$DNS" ]; then
                 DNS="8.8.8.8"
                 break
@@ -251,7 +251,7 @@ get_plex_config() {
     
     echo -e "${WHITE}Enter your Plex server address ${GRAY}(IP:PORT):${NC}"
     echo -e "${GRAY}Example: 192.168.1.100:32400${NC}"
-    read -p "> " PLEX_SERVER
+    read -r -p "> " PLEX_SERVER </dev/tty
     
     echo -e "\n${CYAN}╔════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║                    ${WHITE}Getting Plex Token${CYAN}                     ║${NC}"
@@ -268,13 +268,13 @@ get_plex_config() {
     
     while true; do
         echo -e "${WHITE}Enter your Plex token:${NC}"
-        read -p "> " PLEX_TOKEN
+        read -r -p "> " PLEX_TOKEN </dev/tty
         
         if [ -n "$PLEX_TOKEN" ]; then
             if validate_plex_connection "$PLEX_SERVER" "$PLEX_TOKEN"; then
                 print_success "Connected to Plex server: $PLEX_SERVER_NAME"
                 echo -e "${WHITE}Is this correct? ${GRAY}(y/n):${NC}"
-                read -p "> " confirm
+                read -r -p "> " confirm </dev/tty
                 if [[ "$confirm" =~ ^[Yy] ]]; then
                     break
                 fi
