@@ -96,6 +96,26 @@ if [[ ! "$MEMORY" =~ ^[0-9]+$ ]] || [ "$MEMORY" -lt 128 ]; then
     echo -e "${YELLOW}Using default: 512MB${NC}"
 fi
 
+# Storage selection
+echo
+echo -e "${CYAN}=== Storage Configuration ===${NC}"
+echo
+
+echo "Available storage:"
+pvesm status -content vztmpl | grep -E "(local|dir)" | awk '{print "  " $1 " (" $2 ")"}'
+echo
+
+while true; do
+    read -p "Select storage for container [local-lvm]: " STORAGE
+    STORAGE=${STORAGE:-local-lvm}
+    if pvesm status | grep -q "^$STORAGE "; then
+        echo -e "${GREEN}✓ Using storage: $STORAGE${NC}"
+        break
+    else
+        echo -e "${RED}✗ Storage '$STORAGE' not found${NC}"
+    fi
+done
+
 # Network configuration
 echo
 echo -e "${CYAN}=== Network Configuration ===${NC}"
@@ -151,8 +171,10 @@ while true; do
 done
 
 while true; do
-    read -p "Plex token: " PLEX_TOKEN
-    if [ -n "$PLEX_TOKEN" ]; then
+    read -p "Plex token (or 'back' to change server): " PLEX_TOKEN
+    if [ "$PLEX_TOKEN" = "back" ]; then
+        continue 2  # Go back to server input
+    elif [ -n "$PLEX_TOKEN" ]; then
         break
     fi
     echo -e "${RED}✗ Plex token is required${NC}"
@@ -184,7 +206,7 @@ pct create "$CONTAINER_ID" \
     local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst \
     --memory "$MEMORY" \
     --cores "$CPU_CORES" \
-    --rootfs "local:4" \
+    --rootfs "${STORAGE}:4" \
     --net0 "$NET_CONFIG" \
     ${NAMESERVER:-} \
     --hostname "plex-gpu-balancer" \
