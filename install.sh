@@ -560,6 +560,8 @@ main() {
     # Debug mode for troubleshooting
     echo "Starting Plex GPU Balancer installer..."
     echo "Terminal size: ${TERM_COLS}x${TERM_ROWS}"
+    echo "TTY status: $(tty 2>/dev/null || echo 'not a tty')"
+    echo "Input detection: $([ -t 0 ] && echo 'interactive' || echo 'piped')"
     
     # Check environment
     if ! command -v pct >/dev/null 2>&1; then
@@ -570,6 +572,13 @@ main() {
     if [ "$EUID" -ne 0 ]; then
         echo "ERROR: This script must be run as root"
         exit 1
+    fi
+    
+    # Check if running from pipe (curl | bash)
+    if [ ! -t 0 ] || [ ! -t 1 ]; then
+        echo "Detected piped input - running in simple mode"
+        simple_install
+        return
     fi
     
     # Test tput functionality
