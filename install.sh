@@ -4,11 +4,9 @@
 # Full-screen BIOS-style interactive installer
 # https://github.com/kotysoft/plex-gpu-balancer-public
 
-set -e
-
 # Terminal control
-TERM_COLS=$(tput cols)
-TERM_ROWS=$(tput lines)
+TERM_COLS=$(tput cols 2>/dev/null || echo 80)
+TERM_ROWS=$(tput lines 2>/dev/null || echo 24)
 
 # Colors for BIOS-like interface
 readonly BLUE_BG='\033[44m'
@@ -559,6 +557,10 @@ show_completion() {
 }
 
 main() {
+    # Debug mode for troubleshooting
+    echo "Starting Plex GPU Balancer installer..."
+    echo "Terminal size: ${TERM_COLS}x${TERM_ROWS}"
+    
     # Check environment
     if ! command -v pct >/dev/null 2>&1; then
         echo "ERROR: This installer must be run on a Proxmox VE host"
@@ -570,9 +572,16 @@ main() {
         exit 1
     fi
     
+    # Test tput functionality
+    if ! tput smcup 2>/dev/null; then
+        echo "Warning: Terminal doesn't support full-screen mode"
+        echo "Running in simple mode..."
+        simple_install
+        return
+    fi
+    
     # Initialize terminal
-    tput smcup  # Save screen
-    trap 'tput rmcup' EXIT  # Restore screen on exit
+    trap 'tput rmcup; exit' EXIT INT TERM
     
     # Run installation wizard
     draw_warning_screen
@@ -589,6 +598,73 @@ main() {
     create_configs
     install_services
     show_completion
+}
+
+simple_install() {
+    echo "==============================================="
+    echo "PLEX GPU BALANCER INSTALLER (Simple Mode)"
+    echo "==============================================="
+    echo
+    echo "⚠ WARNING: Work in progress project"
+    echo "Press Enter to continue..."
+    read -r
+    
+    echo "Enter Container ID (100-999999):"
+    read -r CONTAINER_ID
+    
+    echo "Enter CPU cores (default: 1):"
+    read -r CPU_CORES
+    CPU_CORES=${CPU_CORES:-1}
+    
+    echo "Enter Memory in MB (default: 512):"
+    read -r MEMORY
+    MEMORY=${MEMORY:-512}
+    
+    echo "Use DHCP? (y/n, default: y):"
+    read -r use_dhcp
+    use_dhcp=${use_dhcp:-y}
+    
+    if [[ ! "$use_dhcp" =~ ^[Yy] ]]; then
+        echo "Enter static IP:"
+        read -r CONTAINER_IP
+        echo "Enter gateway:"
+        read -r GATEWAY
+    fi
+    
+    echo "Enter Plex server (IP:PORT):"
+    read -r PLEX_SERVER
+    
+    echo "Enter Plex token:"
+    read -r PLEX_TOKEN
+    
+    echo "Creating container..."
+    create_container_simple
+    
+    echo "Installation complete!"
+}
+
+create_container_simple() {
+    local net_config="name=eth0,bridge=vmbr0"
+    if [ -n "$CONTAINER_IP" ]; then
+        net_config+=",ip=${CONTAINER_IP}/24,gw=${GATEWAY}"
+    else
+        net_config+=",ip=dhcp"
+    fi
+    
+    echo "Running: pct create $CONTAINER_ID ..."
+    pct create "$CONTAINER_ID" \
+        local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst \
+        --memory "$MEMORY" \
+        --cores "$CPU_CORES" \
+        --rootfs "local:4" \
+        --net0 "$net_config" \
+        --nameserver "8.8.8.8" \
+        --hostname "plex-gpu-balancer" \
+        --unprivileged 0 \
+        --features nesting=1 \
+        --onboot 1
+    
+    echo "Container created successfully!"
 }
 
 main "$@"
