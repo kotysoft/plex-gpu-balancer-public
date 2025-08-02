@@ -18,8 +18,6 @@ if [ ! -t 0 ]; then
         echo "Now run:"
         echo "  ./installer.sh"
         echo
-        echo "v0.11"
-        echo
         exit 0
     else
         echo "❌ Failed to download installer"
@@ -75,7 +73,15 @@ while true; do
             echo -e "${GREEN}✓ Container ID $CONTAINER_ID is available${NC}"
             break
         else
-            echo -e "${RED}✗ Container $CONTAINER_ID already exists${NC}"
+            echo -e "${YELLOW}⚠ Container $CONTAINER_ID already exists${NC}"
+            read -p "Do you want to destroy it and create new? [y/N]: " DESTROY
+            if [[ "$DESTROY" =~ ^[Yy] ]]; then
+                echo "Stopping and destroying container $CONTAINER_ID..."
+                pct stop "$CONTAINER_ID" 2>/dev/null || true
+                pct destroy "$CONTAINER_ID"
+                echo -e "${GREEN}✓ Container $CONTAINER_ID destroyed${NC}"
+                break
+            fi
         fi
     else
         echo -e "${RED}✗ Invalid container ID${NC}"
@@ -98,23 +104,38 @@ if [[ ! "$MEMORY" =~ ^[0-9]+$ ]] || [ "$MEMORY" -lt 128 ]; then
     echo -e "${YELLOW}Using default: 512MB${NC}"
 fi
 
-# Storage selection
+# Auto-detect storage
 echo
-echo -e "${CYAN}=== Storage Configuration ===${NC}"
+echo -e "${CYAN}=== Storage Detection ===${NC}"
 echo
 
-echo "Available storage:"
-pvesm status -content vztmpl | grep -E "(local|dir)" | awk '{print "  " $1 " (" $2 ")"}'
+# Find first available storage that supports containers
+STORAGE=$(pvesm status | awk '/^[^[:space:]]/ && !/local$/ {print $1; exit}')
+if [ -z "$STORAGE" ]; then
+    STORAGE="local-lvm"
+fi
+
+echo -e "${GREEN}✓ Using storage: $STORAGE${NC}"
+
+# Initial password setup
+echo
+echo -e "${CYAN}=== Security Configuration ===${NC}"
 echo
 
 while true; do
-    read -p "Select storage for container [local-lvm]: " STORAGE
-    STORAGE=${STORAGE:-local-lvm}
-    if pvesm status | grep -q "^$STORAGE "; then
-        echo -e "${GREEN}✓ Using storage: $STORAGE${NC}"
-        break
+    read -s -p "Set initial password for dashboard: " INITIAL_PASSWORD
+    echo
+    if [ ${#INITIAL_PASSWORD} -ge 6 ]; then
+        read -s -p "Confirm password: " CONFIRM_PASSWORD
+        echo
+        if [ "$INITIAL_PASSWORD" = "$CONFIRM_PASSWORD" ]; then
+            echo -e "${GREEN}✓ Password set${NC}"
+            break
+        else
+            echo -e "${RED}✗ Passwords do not match${NC}"
+        fi
     else
-        echo -e "${RED}✗ Storage '$STORAGE' not found${NC}"
+        echo -e "${RED}✗ Password must be at least 6 characters${NC}"
     fi
 done
 
@@ -204,7 +225,7 @@ else
 fi
 
 echo "Creating container $CONTAINER_ID..."
-pct create "$CONTAINER_ID" \
+if pct create "$CONTAINER_ID" \
     local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst \
     --memory "$MEMORY" \
     --cores "$CPU_CORES" \
@@ -214,9 +235,12 @@ pct create "$CONTAINER_ID" \
     --hostname "plex-gpu-balancer" \
     --unprivileged 0 \
     --features nesting=1 \
-    --onboot 1
-
-echo -e "${GREEN}✓ Container created${NC}"
+    --onboot 1; then
+    echo -e "${GREEN}✓ Container created${NC}"
+else
+    echo -e "${RED}✗ Failed to create container${NC}"
+    exit 1
+fi
 
 # GPU passthrough
 echo
@@ -246,8 +270,13 @@ echo
 echo -e "${CYAN}=== Starting Container ===${NC}"
 echo
 
-pct start "$CONTAINER_ID"
-echo -e "${GREEN}✓ Container started${NC}"
+if pct start "$CONTAINER_ID"; then
+    echo -e "${GREEN}✓ Container started${NC}"
+else
+    echo -e "${RED}✗ Failed to start container${NC}"
+    exit 1
+fi
+
 echo "Waiting for container to initialize..."
 sleep 10
 
@@ -271,25 +300,32 @@ echo
 echo -e "${CYAN}=== Installing Plex GPU Balancer ===${NC}"
 echo
 
-pct exec "$CONTAINER_ID" -- git clone https://github.com/kotysoft/plex-gpu-balancer-public.git /opt/plex-gpu-balancer
-pct exec "$CONTAINER_ID" -- pip3 install -r /opt/plex-gpu-balancer/requirements.txt
-
-echo -e "${GREEN}✓ Project installed${NC}"
+if pct exec "$CONTAINER_ID" -- git clone https://github.com/kotysoft/plex-gpu-balancer-public.git /opt/plex-gpu-balancer; then
+    echo "Installing Python dependencies..."
+    pct exec "$CONTAINER_ID" -- pip3 install -r /opt/plex-gpu-balancer/requirements.txt
+    echo -e "${GREEN}✓ Project installed${NC}"
+else
+    echo -e "${RED}✗ Failed to download project${NC}"
+    exit 1
+fi
 
 # Create config
 echo
 echo -e "${CYAN}=== Creating Configuration ===${NC}"
 echo
 
+# Create main config
 pct exec "$CONTAINER_ID" -- bash -c "cat > /opt/plex-gpu-balancer/config.conf << EOF
 [system]
 project_path = /opt/plex-gpu-balancer
+dashboard_password = $INITIAL_PASSWORD
 
 [plex]
 server = $PLEX_SERVER
 token = $PLEX_TOKEN
 EOF"
 
+# Copy balance config template
 pct exec "$CONTAINER_ID" -- cp /opt/plex-gpu-balancer/balance.conf.template /opt/plex-gpu-balancer/balance.conf
 
 echo -e "${GREEN}✓ Configuration created${NC}"
@@ -299,13 +335,18 @@ echo
 echo -e "${CYAN}=== Installing Services ===${NC}"
 echo
 
-pct exec "$CONTAINER_ID" -- bash /opt/plex-gpu-balancer/service-install.sh
-
-echo -e "${GREEN}✓ Services installed${NC}"
+if pct exec "$CONTAINER_ID" -- bash /opt/plex-gpu-balancer/service-install.sh; then
+    echo -e "${GREEN}✓ Services installed${NC}"
+else
+    echo -e "${RED}✗ Failed to install services${NC}"
+    exit 1
+fi
 
 # Get container IP if DHCP
 if [[ "$USE_DHCP" =~ ^[Yy] ]]; then
-    CONTAINER_IP=$(pct exec "$CONTAINER_ID" -- hostname -I | awk '{print $1}')
+    echo "Getting container IP address..."
+    sleep 5
+    CONTAINER_IP=$(pct exec "$CONTAINER_ID" -- hostname -I | awk '{print $1}' 2>/dev/null || echo "check manually")
 fi
 
 # Completion
@@ -318,13 +359,18 @@ echo -e "${WHITE}Container Details:${NC}"
 echo -e "  ID: ${CYAN}$CONTAINER_ID${NC}"
 echo -e "  IP: ${CYAN}$CONTAINER_IP${NC}"
 echo -e "  Resources: ${CYAN}${CPU_CORES} cores, ${MEMORY}MB RAM${NC}"
+echo -e "  Storage: ${CYAN}$STORAGE${NC}"
 echo
 echo -e "${WHITE}Dashboard:${NC}"
-echo -e "  ${CYAN}http://$CONTAINER_IP:8080${NC}"
+echo -e "  URL: ${CYAN}http://$CONTAINER_IP:8080${NC}"
+echo -e "  Password: ${CYAN}[as configured]${NC}"
 echo
 echo -e "${WHITE}Commands:${NC}"
 echo -e "  Enter container: ${CYAN}pct enter $CONTAINER_ID${NC}"
 echo -e "  Check logs: ${CYAN}pct exec $CONTAINER_ID -- journalctl -u plex-gpu-collector -f${NC}"
+echo -e "  Stop container: ${CYAN}pct stop $CONTAINER_ID${NC}"
+echo -e "  Start container: ${CYAN}pct start $CONTAINER_ID${NC}"
 echo
 echo -e "${GREEN}✓ All services started automatically${NC}"
+echo -e "${GREEN}✓ GPU passthrough configured for NVIDIA and Intel${NC}"
 echo
